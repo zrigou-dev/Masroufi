@@ -44,3 +44,9 @@ example
 
 # e2e output, including exported backups
 e2e/screenshots/
+
+# markdown files
+*.md
+
+# Claude Code plugin runtime state
+.omc/

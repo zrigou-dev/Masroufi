@@ -269,4 +269,6 @@ export const fr: Messages = {
   'insight.saving_rate_up': 'Vous avez gardé {percent} % de vos revenus, contre {percentBefore} %.',
   'insight.saving_rate_down': 'Vous avez gardé {percent} % de vos revenus, contre {percentBefore} %.',
   'insight.month_forecast': 'À ce rythme, les dépenses du mois atteindront environ {amount}.',
+  'home.spendingTitle': 'Où est parti votre argent', 'home.spendingEmpty': 'Aucune dépense enregistrée sur cette période.', 'home.fullReport': 'Rapport complet', 'home.accounts': 'Comptes', 'home.quickActions': 'Ajouter', 'home.attention': 'À surveiller', 'home.position2': 'Votre situation', 'home.vsBefore': 'par rapport à la période précédente', 'home.keptPercent': '{percent} % des revenus conservés', 'home.otherCategories': 'Autres', 'home.spent': 'Dépensé', 'home.thisPeriod': 'Cette période',
+  'reports.tabOverview': 'Aperçu', 'reports.tabSpending': 'Dépenses', 'reports.tabTrends': 'Tendances', 'reports.tabPlans': 'Projets', 'reports.savingRate': 'Conservé sur les revenus', 'reports.topCategory': 'Plus grosse catégorie',
 };

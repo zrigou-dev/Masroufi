@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 
 import { listAccounts } from '@/data/accounts';
 import { listBudgetStatuses, summarizeBudgets } from '@/data/budgets';
-import { getAvailableToSpend, getCashFlow, getObligations, getPositions, getSaved } from '@/data/finance';
+import { getAvailableToSpend, getCashFlow, getComparison, getObligations, getPositions, getSaved, spendingByCategory } from '@/data/finance';
 import { listGoals } from '@/data/goals';
 import { getInsights } from '@/data/insights';
 import { listRules } from '@/data/recurring';
@@ -15,8 +15,9 @@ import { monthlyFactor } from '@/domain/recurrence';
 import { useApp, useQuery } from '@/state/app';
 import { Button, Card, Columns, Divider, EmptyState, ErrorState, Icon, IconButton, type IconName, Loading, ProgressBar, Row, Screen, Section, Stacked, T } from '@/ui/components/core';
 import { useErrorMessage, useFeedback } from '@/ui/components/feedback';
+import { Breakdown, ChangePill, Hero, HeroStat, Metric, topSlices } from '@/ui/components/dashboard';
 import { InsightCard } from '@/ui/components/insight';
-import { Money, ObligationRow, PeriodSwitcher, StatLine, TransactionRow, useCategoryName, useMoney, usePeriod } from '@/ui/components/finance';
+import { ObligationRow, PeriodSwitcher, StatLine, TransactionRow, useCategoryName, useMoney, usePeriod } from '@/ui/components/finance';
 import { radius, space } from '@/ui/theme';
 
 const BACKUP_NUDGE_DAYS = 30;
@@ -36,18 +37,6 @@ function Tile({ icon, label, onPress }: { icon: IconName; label: string; onPress
       <T variant="caption" weight="medium" center numberOfLines={2}>
         {label}
       </T>
-    </Pressable>
-  );
-}
-
-function Stat({ label, minor, currency, tone, onPress }: { label: string; minor: number; currency: string; tone?: 'positive' | 'negative'; onPress: () => void }) {
-  const { colors } = useApp();
-  return (
-    <Pressable accessibilityRole="button" accessibilityLabel={label} onPress={onPress} style={({ pressed }) => [styles.stat, { backgroundColor: colors.surface, borderColor: colors.border }, pressed && { opacity: 0.7 }]}>
-      <T variant="caption" tone="muted" numberOfLines={1}>
-        {label}
-      </T>
-      <Money minor={minor} currency={currency} tone={tone} />
     </Pressable>
   );
 }
@@ -124,6 +113,8 @@ export default function Home() {
         rules,
         transactionCount: count?.n ?? 0,
         insights: await getInsights(conn, period.range, currency, nameOf),
+        categories: await spendingByCategory(conn, period.range, currency),
+        comparison: await getComparison(conn, period.range, currency),
       };
     },
     [period.range.from, period.range.to, currency, settings.horizonDays, settings.language],
@@ -204,23 +195,22 @@ export default function Home() {
       },
     });
 
+  const spendSlices = topSlices(
+    data.categories.map((c) => ({ key: c.categoryId ?? 'none', label: nameOf(c), minor: c.minor, color: c.color ?? undefined, onPress: c.categoryId ? () => router.push({ pathname: '/transactions', params: { categoryId: c.categoryId as string, from: period.range.from, to: period.range.to } }) : undefined })),
+    5,
+    t('home.otherCategories'),
+  );
+  const keptPercent = flow.incomeMinor > 0 ? Math.round(((flow.incomeMinor - flow.expenseMinor) / flow.incomeMinor) * 100) : null;
+  const attention = [...overdue.slice(0, 4), ...upcoming];
+
   const left = (
     <>
-      <Card>
-        <T tone="muted">{t('home.totalAvailable')}</T>
-        <Money minor={position?.ownedMinor ?? 0} currency={currency} variant="display" weight="bold" tone={(position?.ownedMinor ?? 0) < 0 ? 'negative' : 'default'} />
-        <Divider />
-        {data.accounts
-          .filter((a) => a.currency === currency)
-          .map((account) => (
-            <Pressable key={account.id} accessibilityRole="button" accessibilityLabel={account.name} onPress={() => router.push({ pathname: '/account/[id]', params: { id: account.id } })}>
-              <StatLine label={account.name} minor={account.balanceMinor} currency={account.currency} tone={account.balanceMinor < 0 ? 'negative' : undefined} />
-            </Pressable>
-          ))}
-        {others.map((p) => (
-          <StatLine key={p.currency} label={t('home.otherCurrency', { currency: p.currency })} minor={p.ownedMinor} currency={p.currency} />
-        ))}
-      </Card>
+      <Hero label={t('home.totalAvailable')} minor={position?.ownedMinor ?? 0} currency={currency}>
+        <Row gap={space.sm} style={{ marginTop: space.md }}>
+          <HeroStat label={t('planning.available')} minor={data.available.availableMinor} currency={currency} onPress={() => router.push('/planning')} />
+          <HeroStat label={t('home.saved')} minor={data.saved.totalMinor} currency={currency} onPress={() => router.push('/goals')} />
+        </Row>
+      </Hero>
 
       <View style={styles.tiles}>
         <Tile icon="remove-circle-outline" label={t('txType.expense')} onPress={() => router.push('/transaction/new')} />
@@ -229,19 +219,16 @@ export default function Home() {
         <Tile icon="swap-horizontal-outline" label={t('txType.transfer')} onPress={() => router.push({ pathname: '/transaction/new', params: { type: 'transfer' } })} />
       </View>
 
-      {data.quick.length > 0 ? (
-        <Section title={t('home.quick')} action={t('home.quickManage')} onAction={() => router.push('/templates')}>
-          <View style={styles.quickWrap}>
-            {data.quick.map((item) => (
-              <QuickButton key={item.key} item={item} onRecord={() => void recordQuick(item)} onOpen={() => openQuick(item)} />
-            ))}
-          </View>
-        </Section>
-      ) : (
-        <T variant="small" tone="muted">
-          {t('home.quickHint')}
-        </T>
-      )}
+      {needsBackup ? (
+        <Card onPress={() => router.push('/settings/backup')} accessibilityLabel={t('backup.title')}>
+          <Row gap={space.md}>
+            <Icon name="cloud-download-outline" tone="warning" />
+            <T variant="small" style={{ flex: 1 }}>
+              {backupAge === null ? t('home.backupNever') : t('home.backupOld', { days: backupAge })}
+            </T>
+          </Row>
+        </Card>
+      ) : null}
 
       {!setupDone && !settings.setupDismissed ? (
         <Card>
@@ -258,29 +245,52 @@ export default function Home() {
         </Card>
       ) : null}
 
-      <View style={styles.stats}>
-        <Stat label={t('planning.available')} minor={data.available.availableMinor} currency={currency} tone={data.available.availableMinor < 0 ? 'negative' : 'positive'} onPress={() => router.push('/planning')} />
-        <Stat label={t('home.saved')} minor={data.saved.totalMinor} currency={currency} onPress={() => router.push('/goals')} />
-        <Stat label={t('home.iOwe')} minor={position?.liabilityMinor ?? 0} currency={currency} tone="negative" onPress={() => router.push('/debts')} />
-        <Stat label={t('home.owedToMe')} minor={position?.receivableMinor ?? 0} currency={currency} tone="positive" onPress={() => router.push('/debts')} />
-      </View>
-      <Card>
-        <StatLine label={t('home.net')} minor={position?.netMinor ?? 0} currency={currency} />
-        <T variant="caption" tone="faint">
-          {t('home.netHint')}
+      {data.quick.length > 0 ? (
+        <Section title={t('home.quick')} action={t('home.quickManage')} onAction={() => router.push('/templates')}>
+          <View style={styles.quickWrap}>
+            {data.quick.map((item) => (
+              <QuickButton key={item.key} item={item} onRecord={() => void recordQuick(item)} onOpen={() => openQuick(item)} />
+            ))}
+          </View>
+        </Section>
+      ) : (
+        <T variant="small" tone="muted">
+          {t('home.quickHint')}
         </T>
-      </Card>
+      )}
 
-      {needsBackup ? (
-        <Card onPress={() => router.push('/settings/backup')} accessibilityLabel={t('backup.title')}>
-          <Row gap={space.md}>
-            <Icon name="cloud-download-outline" tone="warning" />
-            <T variant="small" style={{ flex: 1 }}>
-              {backupAge === null ? t('home.backupNever') : t('home.backupOld', { days: backupAge })}
-            </T>
-          </Row>
+      <Section title={t('home.accounts')} action={t('common.seeAll')} onAction={() => router.push('/accounts')}>
+        <Card style={{ gap: 0 }}>
+          {data.accounts
+            .filter((a) => a.currency === currency)
+            .map((account, index) => (
+              <View key={account.id}>
+                {index > 0 ? <Divider /> : null}
+                <Pressable accessibilityRole="button" accessibilityLabel={account.name} onPress={() => router.push({ pathname: '/account/[id]', params: { id: account.id } })} style={({ pressed }) => [styles.accountRow, pressed && { opacity: 0.7 }]}>
+                  <StatLine label={account.name} minor={account.balanceMinor} currency={account.currency} tone={account.balanceMinor < 0 ? 'negative' : undefined} />
+                </Pressable>
+              </View>
+            ))}
+          {others.map((p) => (
+            <StatLine key={p.currency} label={t('home.otherCurrency', { currency: p.currency })} minor={p.ownedMinor} currency={p.currency} />
+          ))}
         </Card>
-      ) : null}
+      </Section>
+
+      <Section title={t('home.position2')}>
+        <Card>
+          <Row gap={space.md}>
+            <Metric icon="arrow-up-circle-outline" label={t('home.iOwe')} minor={position?.liabilityMinor ?? 0} currency={currency} tone="negative" />
+            <Metric icon="arrow-down-circle-outline" label={t('home.owedToMe')} minor={position?.receivableMinor ?? 0} currency={currency} tone="positive" />
+          </Row>
+          <Divider />
+          <StatLine label={t('home.net')} minor={position?.netMinor ?? 0} currency={currency} />
+          <T variant="caption" tone="faint">
+            {t('home.netHint')}
+          </T>
+          <Button label={t('debts.recordPayment')} kind="ghost" compact icon="people-outline" onPress={() => router.push('/debts')} />
+        </Card>
+      </Section>
     </>
   );
 
@@ -289,10 +299,31 @@ export default function Home() {
       <Section title={t('home.activity')}>
         <PeriodSwitcher period={period} />
         <Card>
-          <StatLine label={t('home.income')} minor={flow.incomeMinor} currency={currency} tone="positive" />
-          <StatLine label={t('home.expenses')} minor={flow.expenseMinor} currency={currency} tone="negative" />
-          <Divider />
-          <StatLine label={t('home.netFlow')} minor={flow.netMinor} currency={currency} signed tone={flow.netMinor < 0 ? 'negative' : 'positive'} />
+          <Row gap={space.md} style={{ alignItems: 'flex-start' }}>
+            <Metric icon="arrow-down" label={t('home.income')} minor={flow.incomeMinor} currency={currency} tone="positive" />
+            <Metric icon="arrow-up" label={t('home.expenses')} minor={flow.expenseMinor} currency={currency} tone="negative" />
+            <Metric icon="swap-vertical" label={t('home.netFlow')} minor={flow.netMinor} currency={currency} tone={flow.netMinor < 0 ? 'negative' : 'primary'} signed />
+          </Row>
+          {keptPercent !== null || (data.comparison.hasPrevious && data.comparison.spentBeforeMinor > 0) ? (
+            <>
+              <Divider />
+              <Row between>
+                {keptPercent !== null ? (
+                  <T variant="small" tone={keptPercent < 0 ? 'negative' : 'muted'}>
+                    {t('home.keptPercent', { percent: keptPercent })}
+                  </T>
+                ) : (
+                  <View />
+                )}
+                <Row gap={space.xs}>
+                  <ChangePill now={data.comparison.spentNowMinor} before={data.comparison.spentBeforeMinor} />
+                  <T variant="caption" tone="faint">
+                    {t('home.vsBefore')}
+                  </T>
+                </Row>
+              </Row>
+            </>
+          ) : null}
           {data.budget ? (
             <Pressable accessibilityRole="button" accessibilityLabel={t('home.budgetLeft')} onPress={() => router.push('/budgets')} style={{ gap: space.xs, marginTop: space.xs }}>
               <StatLine label={t('home.budgetLeft')} minor={data.budget.remainingMinor} currency={currency} tone={data.budget.remainingMinor < 0 ? 'negative' : 'positive'} />
@@ -302,20 +333,20 @@ export default function Home() {
         </Card>
       </Section>
 
-      {overdue.length > 0 ? (
-        <Section title={t('home.overdue')} action={t('common.seeAll')} onAction={() => router.push('/calendar')}>
-          <Card>
-            {overdue.slice(0, 4).map((item) => (
-              <ObligationRow key={item.key} item={item} />
-            ))}
-          </Card>
-        </Section>
-      ) : null}
+      <Section title={t('home.spendingTitle')} action={t('home.fullReport')} onAction={() => router.push('/reports')}>
+        <Card>
+          {spendSlices.length === 0 ? (
+            <T tone="muted">{t('home.spendingEmpty')}</T>
+          ) : (
+            <Breakdown slices={spendSlices} currency={currency} totalMinor={flow.expenseMinor} />
+          )}
+        </Card>
+      </Section>
 
-      {upcoming.length > 0 || recurringOut > 0 ? (
-        <Section title={t('home.upcoming')} action={t('common.seeAll')} onAction={() => router.push('/calendar')}>
+      {attention.length > 0 || recurringOut > 0 ? (
+        <Section title={overdue.length > 0 ? t('home.attention') : t('home.upcoming')} action={t('common.seeAll')} onAction={() => router.push('/calendar')}>
           <Card>
-            {upcoming.map((item) => (
+            {attention.map((item) => (
               <ObligationRow key={item.key} item={item} />
             ))}
             {recurringOut > 0 ? <StatLine label={t('reports.recurringMonthly')} minor={recurringOut} currency={currency} /> : null}
@@ -361,14 +392,13 @@ export default function Home() {
             <EmptyState icon="receipt-outline" title={t('transactions.emptyTitle')} body={t('transactions.emptyBody')} />
           </Card>
         ) : (
-          <Card>
+          <Card style={{ paddingVertical: space.sm }}>
             {data.recent.map((tx) => (
               <TransactionRow key={tx.id} tx={tx} />
             ))}
           </Card>
         )}
       </Section>
-      <Button label={t('debts.recordPayment')} kind="ghost" compact icon="people-outline" onPress={() => router.push('/debts')} />
     </>
   );
 
@@ -388,5 +418,6 @@ const styles = StyleSheet.create({
   quick: { minWidth: 92, maxWidth: 170, minHeight: 52, justifyContent: 'center', paddingHorizontal: space.md, paddingVertical: space.xs, borderRadius: radius.md, borderWidth: 1 },
   stats: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   stat: { flexGrow: 1, flexBasis: '45%', gap: 2, padding: space.md, borderRadius: radius.md, borderWidth: StyleSheet.hairlineWidth },
+  accountRow: { paddingVertical: 2 },
   step: { flexDirection: 'row', alignItems: 'center', gap: space.sm, minHeight: 44 },
 });

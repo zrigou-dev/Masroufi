@@ -12,8 +12,9 @@ import { buildPrintableHtml, shareAsPdf } from '@/platform/print';
 import { useApp, useQuery } from '@/state/app';
 import { Button, Card, Divider, EmptyState, ErrorState, Loading, ProgressBar, Row, Screen, Section, Stacked, T } from '@/ui/components/core';
 import { useErrorMessage, useFeedback } from '@/ui/components/feedback';
-import { DailyBars, MonthBars, PeriodSwitcher, ShareBars, StackedShare, StatLine, TrendColumns, useCategoryName, useMoney, usePeriod } from '@/ui/components/finance';
-import { Chip, ChipRow } from '@/ui/components/forms';
+import { DailyBars, MonthBars, PeriodSwitcher, ShareBars, StatLine, TrendColumns, useCategoryName, useMoney, usePeriod } from '@/ui/components/finance';
+import { Breakdown, ChangePill, Group, Hero, HeroStat, LegendKey, Metric, topSlices } from '@/ui/components/dashboard';
+import { Chip, ChipRow, Segmented } from '@/ui/components/forms';
 import { space } from '@/ui/theme';
 
 /** A flow row earns its place only when money actually moved there. */
@@ -22,13 +23,14 @@ function FlowLine({ label, minor, currency }: { label: string; minor: number; cu
 }
 
 export default function Reports() {
-  const { t, settings, rtl } = useApp();
+  const { t, settings, rtl, colors } = useApp();
   const router = useRouter();
   const period = usePeriod();
   const nameOf = useCategoryName();
   const money = useMoney();
   const { toast } = useFeedback();
   const errorMessage = useErrorMessage();
+  const [tab, setTab] = useState<'overview' | 'spending' | 'trends' | 'plans'>('overview');
   const [chosen, setChosen] = useState<string | null>(null);
   const currency = chosen ?? settings.baseCurrency;
   const { range } = period;
@@ -92,6 +94,13 @@ export default function Reports() {
     }
   };
 
+  const slices = topSlices(
+    data.categories.map((c) => ({ key: c.categoryId ?? 'none', label: nameOf(c), minor: c.minor, color: c.color ?? undefined, onPress: drill(c.categoryId) })),
+    7,
+    t('home.otherCategories'),
+  );
+  const keptPercent = flow.incomeMinor > 0 ? Math.round(((flow.incomeMinor - flow.expenseMinor) / flow.incomeMinor) * 100) : null;
+
   return (
     <Screen hideHeader wide>
       <Row between>
@@ -109,206 +118,250 @@ export default function Reports() {
         </ChipRow>
       ) : null}
 
-      <Card>
-        <T weight="semibold">{t('reports.cashFlow')}</T>
-        <StatLine label={t('home.income')} minor={flow.incomeMinor} currency={currency} tone="positive" />
-        <StatLine label={t('home.expenses')} minor={flow.expenseMinor} currency={currency} tone="negative" />
-        <Divider />
-        <StatLine label={t('home.netFlow')} minor={flow.netMinor} currency={currency} signed tone={flow.netMinor < 0 ? 'negative' : 'positive'} />
-      </Card>
+      <Hero label={t('home.expenses')} minor={flow.expenseMinor} currency={currency}>
+        <Row gap={space.sm} style={{ marginTop: space.xs }}>
+          <ChangePill now={comparison.spentNowMinor} before={comparison.spentBeforeMinor} />
+          {comparison.hasPrevious && comparison.spentBeforeMinor > 0 ? (
+            <T variant="caption" tone="onPrimary" style={{ opacity: 0.85 }}>
+              {t('home.vsBefore')}
+            </T>
+          ) : null}
+        </Row>
+        <Row gap={space.sm} style={{ marginTop: space.md }}>
+          <HeroStat label={t('home.income')} minor={flow.incomeMinor} currency={currency} />
+          <HeroStat label={t('home.netFlow')} minor={flow.netMinor} currency={currency} />
+        </Row>
+      </Hero>
 
-      {!hasActivity ? <EmptyState icon="bar-chart-outline" title={t('reports.emptyTitle')} body={t('reports.emptyBody')} /> : null}
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'overview', label: t('reports.tabOverview') },
+          { value: 'spending', label: t('reports.tabSpending') },
+          { value: 'trends', label: t('reports.tabTrends') },
+          { value: 'plans', label: t('reports.tabPlans') },
+        ]}
+      />
 
-      {hasActivity ? (
-        <Section title={t('reports.flowTitle')}>
+      {!hasActivity && tab !== 'plans' ? <EmptyState icon="bar-chart-outline" title={t('reports.emptyTitle')} body={t('reports.emptyBody')} /> : null}
+
+      {tab === 'overview' && hasActivity ? (
+        <>
           <Card>
-            <T variant="small" weight="semibold" tone="positive">
-              {t('reports.cameFrom')}
-            </T>
-            <FlowLine label={t('reports.regularIncome')} minor={moneyFlow.regularIncomeMinor} currency={currency} />
-            <FlowLine label={t('reports.extraIncome')} minor={moneyFlow.extraIncomeMinor} currency={currency} />
-            <FlowLine label={t('reports.collected')} minor={moneyFlow.collectedMinor} currency={currency} />
-            <FlowLine label={t('reports.borrowed')} minor={moneyFlow.borrowedMinor} currency={currency} />
-            <Divider />
-            <T variant="small" weight="semibold" tone="negative">
-              {t('reports.wentTo')}
-            </T>
-            <FlowLine label={t('reports.recurringSpend')} minor={moneyFlow.recurringMinor} currency={currency} />
-            <FlowLine label={t('reports.everydaySpend')} minor={moneyFlow.everydayMinor} currency={currency} />
-            <FlowLine label={t('reports.occasionalSpend')} minor={moneyFlow.occasionalMinor} currency={currency} />
-            <FlowLine label={t('reports.repaid')} minor={moneyFlow.repaidMinor} currency={currency} />
-            <FlowLine label={t('reports.lent')} minor={moneyFlow.lentMinor} currency={currency} />
-          </Card>
-        </Section>
-      ) : null}
-
-      {comparison.hasPrevious && comparison.spentNowMinor !== 0 ? (
-        <Section title={t('reports.compareTitle')}>
-          <Card>
-            <StatLine label={t('reports.compareNow')} minor={comparison.spentNowMinor} currency={currency} />
-            <StatLine label={t('reports.compareBefore')} minor={comparison.spentBeforeMinor} currency={currency} tone="muted" />
-            <T variant="small" tone={spentChange > 0 ? 'negative' : 'positive'}>
-              {spentChange > 0 ? t('reports.compareMore', { amount: money(spentChange, currency) }) : t('reports.compareLess', { amount: money(-spentChange, currency) })}
-            </T>
-            <Divider />
-            {comparison.changes.slice(0, 4).map((change) => (
-              <StatLine key={change.categoryId ?? 'none'} label={nameOf(change)} minor={change.nowMinor - change.beforeMinor} currency={currency} signed tone={change.nowMinor > change.beforeMinor ? 'negative' : 'positive'} />
-            ))}
-            <T variant="caption" tone="faint">
-              {t('reports.compareHint')}
-            </T>
-          </Card>
-        </Section>
-      ) : null}
-
-      {data.categories.length > 0 ? (
-        <Section title={t('reports.byCategory')}>
-          <Card>
-            <StackedShare items={data.categories.map((c) => ({ key: c.categoryId ?? 'none', minor: c.minor, color: c.color ?? undefined }))} />
-            <ShareBars
-              currency={currency}
-              totalMinor={flow.expenseMinor}
-              items={data.categories.map((c) => ({ key: c.categoryId ?? 'none', label: nameOf(c), minor: c.minor, color: c.color ?? undefined, onPress: drill(c.categoryId) }))}
-            />
-            {flow.incomeMinor > 0 ? (
-              <T variant="caption" tone="faint">
-                {t('reports.ofIncome', { percent: Math.round((flow.expenseMinor / flow.incomeMinor) * 100) })}
-              </T>
+            <Row gap={space.md} style={{ alignItems: 'flex-start' }}>
+              <Metric icon="arrow-down" label={t('home.income')} minor={flow.incomeMinor} currency={currency} tone="positive" />
+              <Metric icon="arrow-up" label={t('home.expenses')} minor={flow.expenseMinor} currency={currency} tone="negative" />
+              <Metric icon="swap-vertical" label={t('home.netFlow')} minor={flow.netMinor} currency={currency} tone={flow.netMinor < 0 ? 'negative' : 'primary'} signed />
+            </Row>
+            {keptPercent !== null ? (
+              <>
+                <Divider />
+                <T variant="small" tone={keptPercent < 0 ? 'negative' : 'muted'}>
+                  {t('home.keptPercent', { percent: keptPercent })}
+                </T>
+              </>
             ) : null}
           </Card>
-        </Section>
+
+          {slices.length > 0 ? (
+            <Group title={t('home.spendingTitle')}>
+              <Card>
+                <Breakdown slices={slices.slice(0, 4)} currency={currency} totalMinor={flow.expenseMinor} />
+                <Button label={t('reports.tabSpending')} kind="ghost" compact onPress={() => setTab('spending')} />
+              </Card>
+            </Group>
+          ) : null}
+
+          <Group title={t('reports.flowTitle')}>
+            <Card>
+              <T variant="small" weight="semibold" tone="positive">
+                {t('reports.cameFrom')}
+              </T>
+              <FlowLine label={t('reports.regularIncome')} minor={moneyFlow.regularIncomeMinor} currency={currency} />
+              <FlowLine label={t('reports.extraIncome')} minor={moneyFlow.extraIncomeMinor} currency={currency} />
+              <FlowLine label={t('reports.collected')} minor={moneyFlow.collectedMinor} currency={currency} />
+              <FlowLine label={t('reports.borrowed')} minor={moneyFlow.borrowedMinor} currency={currency} />
+              <Divider />
+              <T variant="small" weight="semibold" tone="negative">
+                {t('reports.wentTo')}
+              </T>
+              <FlowLine label={t('reports.recurringSpend')} minor={moneyFlow.recurringMinor} currency={currency} />
+              <FlowLine label={t('reports.everydaySpend')} minor={moneyFlow.everydayMinor} currency={currency} />
+              <FlowLine label={t('reports.occasionalSpend')} minor={moneyFlow.occasionalMinor} currency={currency} />
+              <FlowLine label={t('reports.repaid')} minor={moneyFlow.repaidMinor} currency={currency} />
+              <FlowLine label={t('reports.lent')} minor={moneyFlow.lentMinor} currency={currency} />
+            </Card>
+          </Group>
+
+          <Group title={t('reports.movements')} caption={t('reports.movementsHint')}>
+            <Card>
+              <FlowLine label={t('reports.transfers')} minor={data.movements.transfersMinor} currency={currency} />
+              <FlowLine label={t('reports.repaid')} minor={data.movements.repaidMinor} currency={currency} />
+              <FlowLine label={t('reports.collected')} minor={data.movements.collectedMinor} currency={currency} />
+              <FlowLine label={t('reports.borrowed')} minor={data.movements.borrowedMinor} currency={currency} />
+              <FlowLine label={t('reports.lent')} minor={data.movements.lentMinor} currency={currency} />
+            </Card>
+          </Group>
+        </>
       ) : null}
 
-      {reducible.length > 0 ? (
-        <Section title={t('reports.reduceTitle')}>
-          <Card>
-            <T variant="small" tone="muted">
-              {t('reports.reduceHint')}
-            </T>
-            {reducible.map((c) => (
-              <StatLine key={c.categoryId ?? 'none'} label={nameOf(c)} minor={c.minor} currency={currency} />
-            ))}
-          </Card>
-        </Section>
+      {tab === 'spending' && hasActivity ? (
+        <>
+          {slices.length > 0 ? (
+            <Group title={t('reports.byCategory')}>
+              <Card>
+                <Breakdown slices={slices} currency={currency} totalMinor={flow.expenseMinor} />
+                {flow.incomeMinor > 0 ? (
+                  <T variant="caption" tone="faint">
+                    {t('reports.ofIncome', { percent: Math.round((flow.expenseMinor / flow.incomeMinor) * 100) })}
+                  </T>
+                ) : null}
+              </Card>
+            </Group>
+          ) : null}
+
+          {comparison.hasPrevious && comparison.spentNowMinor !== 0 ? (
+            <Group title={t('reports.compareTitle')}>
+              <Card>
+                <StatLine label={t('reports.compareNow')} minor={comparison.spentNowMinor} currency={currency} />
+                <StatLine label={t('reports.compareBefore')} minor={comparison.spentBeforeMinor} currency={currency} tone="muted" />
+                <T variant="small" tone={spentChange > 0 ? 'negative' : 'positive'}>
+                  {spentChange > 0 ? t('reports.compareMore', { amount: money(spentChange, currency) }) : t('reports.compareLess', { amount: money(-spentChange, currency) })}
+                </T>
+                <Divider />
+                {comparison.changes.slice(0, 4).map((change) => (
+                  <StatLine key={change.categoryId ?? 'none'} label={nameOf(change)} minor={change.nowMinor - change.beforeMinor} currency={currency} signed tone={change.nowMinor > change.beforeMinor ? 'negative' : 'positive'} />
+                ))}
+                <T variant="caption" tone="faint">
+                  {t('reports.compareHint')}
+                </T>
+              </Card>
+            </Group>
+          ) : null}
+
+          {reducible.length > 0 ? (
+            <Group title={t('reports.reduceTitle')} caption={t('reports.reduceHint')}>
+              <Card>
+                {reducible.map((c) => (
+                  <StatLine key={c.categoryId ?? 'none'} label={nameOf(c)} minor={c.minor} currency={currency} />
+                ))}
+              </Card>
+            </Group>
+          ) : null}
+
+          {data.daily.length > 1 ? (
+            <Group title={t('reports.daily')}>
+              <Card>
+                <DailyBars days={data.daily} range={range} currency={currency} />
+              </Card>
+            </Group>
+          ) : null}
+
+          {data.byAccount.length > 0 ? (
+            <Group title={t('reports.byAccount')}>
+              <Card>
+                <ShareBars currency={currency} items={data.byAccount.map((a) => ({ key: a.accountId, label: a.name, minor: a.minor }))} />
+              </Card>
+            </Group>
+          ) : null}
+        </>
       ) : null}
 
-      {data.daily.length > 1 ? (
-        <Section title={t('reports.daily')}>
-          <Card>
-            <DailyBars days={data.daily} range={range} currency={currency} />
-          </Card>
-        </Section>
+      {tab === 'trends' ? (
+        <>
+          <Group title={t('reports.incomeVsExpense')}>
+            <Card>
+              <MonthBars currency={currency} points={months.map((m) => ({ label: m.label, a: m.incomeMinor, b: m.expenseMinor }))} />
+              <Row gap={space.lg}>
+                <LegendKey color={colors.positive} label={t('home.income')} />
+                <LegendKey color={colors.negative} label={t('home.expenses')} />
+              </Row>
+            </Card>
+          </Group>
+
+          <Group title={t('reports.balanceTrend')}>
+            <Card>
+              <TrendColumns currency={currency} points={months.map((m) => ({ label: m.label, value: m.closingMinor }))} />
+            </Card>
+          </Group>
+
+          {data.income.length > 0 ? (
+            <Group title={t('reports.incomeByCategory')}>
+              <Card>
+                <ShareBars currency={currency} items={data.income.map((c) => ({ key: c.categoryId ?? 'none', label: nameOf(c), minor: c.minor, color: c.color ?? undefined }))} />
+              </Card>
+            </Group>
+          ) : null}
+        </>
       ) : null}
 
-      {data.income.length > 0 ? (
-        <Section title={t('reports.incomeByCategory')}>
-          <Card>
-            <ShareBars currency={currency} items={data.income.map((c) => ({ key: c.categoryId ?? 'none', label: nameOf(c), minor: c.minor, color: c.color ?? undefined }))} />
-          </Card>
-        </Section>
-      ) : null}
+      {tab === 'plans' ? (
+        <>
+          <Group title={t('reports.outstanding')}>
+            <Card onPress={() => router.push('/debts')} accessibilityLabel={t('reports.outstanding')}>
+              <Row gap={space.md}>
+                <Metric icon="arrow-up-circle-outline" label={t('home.iOwe')} minor={data.position?.liabilityMinor ?? 0} currency={currency} tone="negative" />
+                <Metric icon="arrow-down-circle-outline" label={t('home.owedToMe')} minor={data.position?.receivableMinor ?? 0} currency={currency} tone="positive" />
+              </Row>
+            </Card>
+          </Group>
 
-      {data.byAccount.length > 0 ? (
-        <Section title={t('reports.byAccount')}>
-          <Card>
-            <ShareBars currency={currency} items={data.byAccount.map((a) => ({ key: a.accountId, label: a.name, minor: a.minor }))} />
-          </Card>
-        </Section>
-      ) : null}
-
-      <Section title={t('reports.movements')}>
-        <Card>
-          <StatLine label={t('reports.transfers')} minor={data.movements.transfersMinor} currency={currency} />
-          <StatLine label={t('reports.repaid')} minor={data.movements.repaidMinor} currency={currency} />
-          <StatLine label={t('reports.collected')} minor={data.movements.collectedMinor} currency={currency} />
-          <StatLine label={t('reports.borrowed')} minor={data.movements.borrowedMinor} currency={currency} />
-          <StatLine label={t('reports.lent')} minor={data.movements.lentMinor} currency={currency} />
-          <T variant="caption" tone="faint">
-            {t('reports.movementsHint')}
-          </T>
-        </Card>
-      </Section>
-
-      <Section title={t('reports.incomeVsExpense')}>
-        <Card>
-          <MonthBars currency={currency} points={months.map((m) => ({ label: m.label, a: m.incomeMinor, b: m.expenseMinor }))} />
-          <Row gap={space.lg}>
-            <T variant="caption" tone="positive">
-              ■ {t('home.income')}
-            </T>
-            <T variant="caption" tone="negative">
-              ■ {t('home.expenses')}
-            </T>
-          </Row>
-        </Card>
-      </Section>
-
-      <Section title={t('reports.balanceTrend')}>
-        <Card>
-          <TrendColumns currency={currency} points={months.map((m) => ({ label: m.label, value: m.closingMinor }))} />
-        </Card>
-      </Section>
-
-      <Section title={t('reports.outstanding')} action={t('common.seeAll')} onAction={() => router.push('/debts')}>
-        <Card>
-          <StatLine label={t('home.iOwe')} minor={data.position?.liabilityMinor ?? 0} currency={currency} tone="negative" />
-          <StatLine label={t('home.owedToMe')} minor={data.position?.receivableMinor ?? 0} currency={currency} tone="positive" />
-        </Card>
-      </Section>
-
-      {data.budgets.length > 0 ? (
-        <Section title={t('reports.budgets')} action={t('common.seeAll')} onAction={() => router.push('/budgets')}>
-          <Card>
-            <Stacked>
-              {data.budgets.map(({ budget, status }) => (
-                <Stacked key={budget.id} gap={space.xs}>
-                  <Row between>
-                    <T variant="small" numberOfLines={1} style={{ flexShrink: 1 }}>
-                      {budget.name}
-                    </T>
-                    <T variant="small" tone={status.remainingMinor < 0 ? 'negative' : 'muted'}>
-                      {money(status.spentMinor, budget.currency)} / {money(budget.amountMinor, budget.currency)}
-                    </T>
-                  </Row>
-                  <ProgressBar value={status.percentUsed / 100} tone={status.remainingMinor < 0 ? 'negative' : 'primary'} />
+          {data.budgets.length > 0 ? (
+            <Section title={t('reports.budgets')} action={t('common.seeAll')} onAction={() => router.push('/budgets')}>
+              <Card>
+                <Stacked>
+                  {data.budgets.map(({ budget, status }) => (
+                    <Stacked key={budget.id} gap={space.xs}>
+                      <Row between>
+                        <T variant="small" numberOfLines={1} style={{ flexShrink: 1 }}>
+                          {budget.name}
+                        </T>
+                        <T variant="small" tone={status.remainingMinor < 0 ? 'negative' : 'muted'}>
+                          {money(status.spentMinor, budget.currency)} / {money(budget.amountMinor, budget.currency)}
+                        </T>
+                      </Row>
+                      <ProgressBar value={status.percentUsed / 100} tone={status.remainingMinor < 0 ? 'negative' : 'primary'} />
+                    </Stacked>
+                  ))}
                 </Stacked>
-              ))}
-            </Stacked>
-          </Card>
-        </Section>
-      ) : null}
+              </Card>
+            </Section>
+          ) : null}
 
-      {data.goals.length > 0 ? (
-        <Section title={t('reports.goals')} action={t('common.seeAll')} onAction={() => router.push('/goals')}>
-          <Card>
-            <Stacked>
-              {data.goals.map(({ goal, status }) => (
-                <Stacked key={goal.id} gap={space.xs}>
-                  <Row between>
-                    <T variant="small" numberOfLines={1} style={{ flexShrink: 1 }}>
-                      {goal.name}
-                    </T>
-                    <T variant="small" tone="muted">
-                      {money(status.currentMinor, goal.currency)} / {money(goal.targetMinor, goal.currency)}
-                    </T>
-                  </Row>
-                  <ProgressBar value={status.percent / 100} tone="positive" />
+          {data.goals.length > 0 ? (
+            <Section title={t('reports.goals')} action={t('common.seeAll')} onAction={() => router.push('/goals')}>
+              <Card>
+                <Stacked>
+                  {data.goals.map(({ goal, status }) => (
+                    <Stacked key={goal.id} gap={space.xs}>
+                      <Row between>
+                        <T variant="small" numberOfLines={1} style={{ flexShrink: 1 }}>
+                          {goal.name}
+                        </T>
+                        <T variant="small" tone="muted">
+                          {money(status.currentMinor, goal.currency)} / {money(goal.targetMinor, goal.currency)}
+                        </T>
+                      </Row>
+                      <ProgressBar value={status.percent / 100} tone="positive" />
+                    </Stacked>
+                  ))}
                 </Stacked>
-              ))}
-            </Stacked>
-          </Card>
-        </Section>
-      ) : null}
+              </Card>
+            </Section>
+          ) : null}
 
-      {recurringOut > 0 ? (
-        <Section title={t('reports.recurring')} action={t('common.seeAll')} onAction={() => router.push('/recurring')}>
-          <Card>
-            <StatLine label={t('reports.recurringMonthly')} minor={recurringOut} currency={currency} />
-            <T variant="caption" tone="faint">
-              {t('insight.basisEstimate')}
-            </T>
-          </Card>
-        </Section>
+          {recurringOut > 0 ? (
+            <Section title={t('reports.recurring')} action={t('common.seeAll')} onAction={() => router.push('/recurring')}>
+              <Card>
+                <StatLine label={t('reports.recurringMonthly')} minor={recurringOut} currency={currency} />
+                <T variant="caption" tone="faint">
+                  {t('insight.basisEstimate')}
+                </T>
+              </Card>
+            </Section>
+          ) : null}
+        </>
       ) : null}
     </Screen>
   );

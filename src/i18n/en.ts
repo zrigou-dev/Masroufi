@@ -267,4 +267,6 @@ export const en = {
   'insight.saving_rate_up': 'You kept {percent}% of your income, up from {percentBefore}%.',
   'insight.saving_rate_down': 'You kept {percent}% of your income, down from {percentBefore}%.',
   'insight.month_forecast': 'At this pace, this month’s spending will reach about {amount}.',
+  'home.spendingTitle': 'Where your money went', 'home.spendingEmpty': 'No spending recorded in this period.', 'home.fullReport': 'Full report', 'home.accounts': 'Accounts', 'home.quickActions': 'Add', 'home.attention': 'Needs your attention', 'home.position2': 'Your position', 'home.vsBefore': 'vs previous period', 'home.keptPercent': 'Kept {percent}% of income', 'home.otherCategories': 'Other', 'home.spent': 'Spent', 'home.thisPeriod': 'This period',
+  'reports.tabOverview': 'Overview', 'reports.tabSpending': 'Spending', 'reports.tabTrends': 'Trends', 'reports.tabPlans': 'Plans', 'reports.savingRate': 'Kept from income', 'reports.topCategory': 'Biggest category',
 } as const;

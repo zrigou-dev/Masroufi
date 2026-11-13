@@ -269,4 +269,6 @@ export const ar: Messages = {
   'insight.saving_rate_up': 'احتفظت بنسبة {percent}% من دخلك، بعد أن كانت {percentBefore}%.',
   'insight.saving_rate_down': 'احتفظت بنسبة {percent}% من دخلك، بعد أن كانت {percentBefore}%.',
   'insight.month_forecast': 'بهذه الوتيرة سيبلغ إنفاق هذا الشهر نحو {amount}.',
+  'home.spendingTitle': 'أين ذهبت أموالك', 'home.spendingEmpty': 'لا توجد مصاريف مسجّلة في هذه الفترة.', 'home.fullReport': 'التقرير الكامل', 'home.accounts': 'الحسابات', 'home.quickActions': 'إضافة', 'home.attention': 'يحتاج انتباهك', 'home.position2': 'وضعك المالي', 'home.vsBefore': 'مقارنة بالفترة السابقة', 'home.keptPercent': 'وفّرت {percent}% من الدخل', 'home.otherCategories': 'أخرى', 'home.spent': 'المصروف', 'home.thisPeriod': 'هذه الفترة',
+  'reports.tabOverview': 'نظرة عامة', 'reports.tabSpending': 'المصاريف', 'reports.tabTrends': 'الاتجاهات', 'reports.tabPlans': 'الخطط', 'reports.savingRate': 'المتبقي من الدخل', 'reports.topCategory': 'أكبر فئة',
 };

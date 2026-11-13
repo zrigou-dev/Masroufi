@@ -325,7 +325,7 @@ export function ListRow({ icon, iconColor, title, subtitle, trailing, actions, o
 }
 
 const styles = StyleSheet.create({
-  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.lg, padding: space.lg, gap: space.sm },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: radius.xl, padding: space.lg, gap: space.sm, shadowColor: '#0A1A14', shadowOpacity: 0.06, shadowRadius: 14, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
   row: { flexDirection: 'row', alignItems: 'center' },
   between: { justifyContent: 'space-between' },
   pressed: { opacity: 0.7 },
